@@ -119,6 +119,49 @@ class GoProPlus:
             "access_token": self.auth_token,
         }
 
+        # Check if file already exists and is complete
+        if os.path.exists(filepath):
+            try:
+                # Get expected file size from server
+                head_resp = requests.head(
+                    url,
+                    params=params,
+                    headers=self.default_headers(),
+                    cookies=self.default_cookies(),
+                    timeout=10
+                )
+                
+                if head_resp.status_code == 200 and 'Content-Length' in head_resp.headers:
+                    expected_size = int(head_resp.headers['Content-Length'])
+                    actual_size = os.path.getsize(filepath)
+                    
+                    if actual_size == expected_size:
+                        print(f"file already exists and is complete: {filepath} ({actual_size} bytes)")
+                        return True
+                    else:
+                        print(f"file exists but incomplete: {actual_size}/{expected_size} bytes, re-downloading...")
+                        os.remove(filepath)
+                else:
+                    # HEAD request didn't return Content-Length, validate ZIP can be opened
+                    import zipfile
+                    try:
+                        with zipfile.ZipFile(filepath, 'r') as zip_ref:
+                            # Just check if ZIP can be opened and has files
+                            if len(zip_ref.namelist()) > 0:
+                                print(f"file already exists and is valid: {filepath}")
+                                return True
+                        print(f"existing file is empty, re-downloading...")
+                        os.remove(filepath)
+                    except (zipfile.BadZipFile, Exception) as zip_err:
+                        print(f"existing file is corrupted: {zip_err}, re-downloading...")
+                        os.remove(filepath)
+            except Exception as e:
+                print(f"could not validate existing file: {e}, re-downloading...")
+                try:
+                    os.remove(filepath)
+                except:
+                    pass
+
         temp_filepath = filepath + ".tmp"
         retry_count = 0
         
@@ -236,6 +279,10 @@ def main():
     if not media_pages:
         print('failed to get media')
         return -1
+
+    # Ensure download directory exists
+    if args.action == "download":
+        os.makedirs(args.download_path, exist_ok=True)
 
     for page, media in media_pages.items():
         filenames = gpp.get_filenames_from_media(media)
