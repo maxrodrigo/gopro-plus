@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 1.6.0
+* Add automatic retry logic with exponential backoff for download failures
+* Add HTTP Range header support to resume partial downloads from interruption point
+* Add --max-retries CLI argument to configure maximum retry attempts (default: 5)
+* Reset retry counter on successful progress to allow fresh retries per failure
+* Add 30s timeout per request to prevent hanging connections
+* Handle ChunkedEncodingError, ConnectionError, and Timeout exceptions gracefully
+* Save partial downloads as .tmp files for manual recovery if all retries fail
+
 ## 1.5.3
 * Fix missing download directory on the docker container
 * Add entrypoint.sh script as a startup script for Docker usage

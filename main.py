@@ -5,6 +5,8 @@ import argparse
 import signal
 import readchar
 import requests
+import time
+from requests.exceptions import ChunkedEncodingError, ConnectionError, Timeout
 
 
 sys.stdout = open(1, "w", encoding="utf-8", closefd=False)
@@ -110,44 +112,95 @@ class GoProPlus:
         return output_media
 
 
-    def download_media_ids(self, ids, filepath, progress_mode="inline"):
+    def download_media_ids(self, ids, filepath, progress_mode="inline", max_retries=5):
         url = "{}/media/x/zip/source".format(self.host)
         params = {
             "ids": ",".join(ids),
             "access_token": self.auth_token,
         }
 
-        resp = requests.get(
-            url,
-            params=params,
-            headers=self.default_headers(),
-            cookies=self.default_cookies(),
-            stream=True)
+        temp_filepath = filepath + ".tmp"
+        retry_count = 0
+        
+        while retry_count <= max_retries:
+            try:
+                # Check if we have a partial download to resume
+                downloaded_size = 0
+                if os.path.exists(temp_filepath):
+                    downloaded_size = os.path.getsize(temp_filepath)
+                    if downloaded_size > 0:
+                        print(f"\nresuming download from {downloaded_size} bytes")
+                
+                headers = self.default_headers()
+                if downloaded_size > 0:
+                    headers['Range'] = f'bytes={downloaded_size}-'
+                
+                resp = requests.get(
+                    url,
+                    params=params,
+                    headers=headers,
+                    cookies=self.default_cookies(),
+                    stream=True,
+                    timeout=30)
 
-        if resp.status_code != 200:
-            print("request failed with status code: {} and error: {}".format(resp.status_code, self.parse_error(resp)))
-            return False
+                if resp.status_code not in [200, 206]:
+                    print("request failed with status code: {} and error: {}".format(resp.status_code, self.parse_error(resp)))
+                    return False
 
-        downloaded_size = 0
-        print('downloading to {}'.format(filepath))
-        with open(filepath, 'wb') as file:
-            # Iterate over the response in chunks 8K chunks
-            for chunk in resp.iter_content(chunk_size=8192):
-                # Write the chunk to the file
-                file.write(chunk)
+                if downloaded_size == 0:
+                    print('downloading to {}'.format(filepath))
+                
+                mode = 'ab' if downloaded_size > 0 else 'wb'
+                last_progress_size = downloaded_size
+                with open(temp_filepath, mode) as file:
+                    # Iterate over the response in chunks 8K chunks
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        if chunk:  # filter out keep-alive chunks
+                            # Write the chunk to the file
+                            file.write(chunk)
 
-                # Update the downloaded size
-                downloaded_size += len(chunk)
-                progress = ((downloaded_size / 1024) / 1024)
+                            # Update the downloaded size
+                            downloaded_size += len(chunk)
+                            progress = ((downloaded_size / 1024) / 1024)
 
-                if progress_mode == "inline":
-                    # Print the progress
-                    print(f"\rdownloaded: {progress:.2f}MB ({downloaded_size}) bytes", end='')
+                            if progress_mode == "inline":
+                                # Print the progress
+                                print(f"\rdownloaded: {progress:.2f}MB ({downloaded_size}) bytes", end='')
 
-                if progress_mode == "newline":
-                    print(f"downloaded: {progress:.2f}MB ({downloaded_size}) bytes")
+                            if progress_mode == "newline":
+                                print(f"downloaded: {progress:.2f}MB ({downloaded_size}) bytes")
+                
+                # If we made progress, reset retry counter
+                if downloaded_size > last_progress_size:
+                    retry_count = 0
 
-        print("\ndownload completed!")
+                # Download completed successfully, rename temp file to final name
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                os.rename(temp_filepath, filepath)
+                print("\ndownload completed!")
+                return True
+                
+            except (ChunkedEncodingError, ConnectionError, Timeout) as e:
+                retry_count += 1
+                if retry_count > max_retries:
+                    print(f"\ndownload failed after {max_retries} retries: {e}")
+                    if os.path.exists(temp_filepath):
+                        print(f"partial download saved at: {temp_filepath}")
+                    return False
+                
+                wait_time = min(2 ** retry_count, 60)  # exponential backoff, max 60s
+                print(f"\nconnection error: {e}")
+                print(f"retrying in {wait_time}s (attempt {retry_count}/{max_retries})...")
+                time.sleep(wait_time)
+            
+            except Exception as e:
+                print(f"\nunexpected error during download: {e}")
+                if os.path.exists(temp_filepath):
+                    print(f"partial download saved at: {temp_filepath}")
+                return False
+        
+        return False
 
 
 def main():
@@ -161,6 +214,7 @@ def main():
     parser.add_argument("--start-page", nargs="?", help="starting page", type=int, default=1)
     parser.add_argument("--download-path", help="path to store the download zip", default="./download")
     parser.add_argument("--progress-mode", help="showing download progress. supported modes: {}".format(",".join(progress_modes)), default=progress_modes[0])
+    parser.add_argument("--max-retries", nargs="?", help="maximum number of retries for failed downloads", type=int, default=5)
 
     args = parser.parse_args()
 
@@ -190,7 +244,7 @@ def main():
         if args.action == "download":
             filepath = "{}/{}_page.zip".format(args.download_path, page)
             ids = gpp.get_ids_from_media(media)
-            gpp.download_media_ids(ids, filepath, progress_mode=args.progress_mode)
+            gpp.download_media_ids(ids, filepath, progress_mode=args.progress_mode, max_retries=args.max_retries)
 
 
 if __name__ == "__main__":
