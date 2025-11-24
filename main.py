@@ -167,35 +167,27 @@ class GoProPlus:
         
         while retry_count <= max_retries:
             try:
-                # Check if we have a partial download to resume
-                downloaded_size = 0
+                # Remove any existing temp file - ZIP files cannot be resumed
+                # because they are dynamically generated and would be corrupted
                 if os.path.exists(temp_filepath):
-                    downloaded_size = os.path.getsize(temp_filepath)
-                    if downloaded_size > 0:
-                        print(f"\nresuming download from {downloaded_size} bytes")
+                    os.remove(temp_filepath)
                 
-                headers = self.default_headers()
-                if downloaded_size > 0:
-                    headers['Range'] = f'bytes={downloaded_size}-'
+                print('downloading to {}'.format(filepath))
                 
                 resp = requests.get(
                     url,
                     params=params,
-                    headers=headers,
+                    headers=self.default_headers(),
                     cookies=self.default_cookies(),
                     stream=True,
                     timeout=30)
 
-                if resp.status_code not in [200, 206]:
+                if resp.status_code != 200:
                     print("request failed with status code: {} and error: {}".format(resp.status_code, self.parse_error(resp)))
                     return False
-
-                if downloaded_size == 0:
-                    print('downloading to {}'.format(filepath))
                 
-                mode = 'ab' if downloaded_size > 0 else 'wb'
-                last_progress_size = downloaded_size
-                with open(temp_filepath, mode) as file:
+                downloaded_size = 0
+                with open(temp_filepath, 'wb') as file:
                     # Iterate over the response in chunks 8K chunks
                     for chunk in resp.iter_content(chunk_size=8192):
                         if chunk:  # filter out keep-alive chunks
@@ -212,10 +204,6 @@ class GoProPlus:
 
                             if progress_mode == "newline":
                                 print(f"downloaded: {progress:.2f}MB ({downloaded_size}) bytes")
-                
-                # If we made progress, reset retry counter
-                if downloaded_size > last_progress_size:
-                    retry_count = 0
 
                 # Download completed successfully, rename temp file to final name
                 if os.path.exists(filepath):
@@ -228,8 +216,9 @@ class GoProPlus:
                 retry_count += 1
                 if retry_count > max_retries:
                     print(f"\ndownload failed after {max_retries} retries: {e}")
+                    # Clean up temp file on final failure
                     if os.path.exists(temp_filepath):
-                        print(f"partial download saved at: {temp_filepath}")
+                        os.remove(temp_filepath)
                     return False
                 
                 wait_time = min(2 ** retry_count, 60)  # exponential backoff, max 60s
@@ -239,8 +228,9 @@ class GoProPlus:
             
             except Exception as e:
                 print(f"\nunexpected error during download: {e}")
+                # Clean up temp file on error
                 if os.path.exists(temp_filepath):
-                    print(f"partial download saved at: {temp_filepath}")
+                    os.remove(temp_filepath)
                 return False
         
         return False
