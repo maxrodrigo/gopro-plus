@@ -13,6 +13,15 @@ to use the web interface.
 * 🐳 Docker hub: https://hub.docker.com/r/itsankoff/gopro
 * 📝 Article: https://thetooth.io/blog/gopro-plus-downloader/
 
+## Features
+
+* 📦 **Bulk Download** - Download all your GoPro Plus media without the 25-file limit
+* 🔄 **Idempotent Downloads** - Safely re-run downloads; already downloaded files are automatically skipped
+* ⚡ **Resume Support** - Interrupted downloads can be resumed from where they left off
+* 🔁 **Automatic Retry** - Network failures are handled with exponential backoff retry logic
+* 🐳 **Docker Support** - Run in a containerized environment for easy deployment
+* 🖥️ **CLI Interface** - Full command-line control with flexible options
+
 
 ## Usage (Docker environment)
 
@@ -52,7 +61,7 @@ To set up `AUTH_TOKEN` as an environment variable, you'll need to retrieve
 your JWT token by logging into your GoPro Plus media library account.
 
 1. Open a browser of choice (Firefox/Chrome is prefered, for Safari you need to enable Developer Tools)
-2. Go to [GoPro Plus Media Library](https://plus.gopro.com/media-library/)  (assuming that you are signed out. If you are not, please sing out)
+2. Go to [GoPro Plus Media Library](https://plus.gopro.com/media-library/) (assuming that you are signed out. If you are not, please sign out)
 3. Open your browser's Developer Tools (Ctrl+Shift+I on most browsers or Cmd+Option+I on Mac).
 4. Go to the Network Tab on the Developer Tools console.
 5. In the Filter field enter - `user`
@@ -68,7 +77,7 @@ docker run -e AUTH_TOKEN=<gopro-auth-token> -e USER_ID=<gopro-user-id> itsankoff
 For Linux/macOS:
 ```bash
 export AUTH_TOKEN="<gibberish_string_here>"
-export USER_ID="<user-id>`
+export USER_ID="<user-id>"
 ```
 
 For Windows Command Prompt:
@@ -112,7 +121,35 @@ To run GoPro Plus locally on your machine, follow these steps:
 
 ## Local Usage
 
-* `./gopro` - running the help section
+Basic usage:
+```bash
+./gopro
+```
+
+Available command-line options:
+
+* `--action <list|download>` - Action to execute (default: `download`)
+* `--start-page <number>` - Start from a specific page (default: `1`)
+* `--pages <number>` - Number of pages to process (default: all pages)
+* `--per-page <number>` - Items per page (default: `30`)
+* `--download-path <path>` - Directory to store downloaded files (default: `./download`)
+* `--progress-mode <inline|newline|noline>` - Download progress display mode (default: `inline`)
+* `--max-retries <number>` - Maximum retry attempts for failed downloads (default: `5`)
+
+Examples:
+```bash
+# List all media without downloading
+./gopro --action list
+
+# Download to a specific directory
+./gopro --download-path /path/to/storage
+
+# Download pages 5-10 with 50 items per page
+./gopro --start-page 5 --pages 6 --per-page 50
+
+# Download with verbose progress output
+./gopro --progress-mode newline
+```
 
 ## Dev Tooling
 
@@ -128,4 +165,14 @@ To run GoPro Plus locally on your machine, follow these steps:
 
 ## Troubleshooting
 
-* Docker logs `docker logs gopro-downloader`
+### Docker logs
+```bash
+docker logs gopro-downloader
+```
+
+### Common Issues
+
+* **Authentication failed**: Your `AUTH_TOKEN` or `USER_ID` may have expired. Re-authenticate and update your environment variables.
+* **Download stuck**: The script validates existing files before downloading. For large ZIP files, this may take a moment.
+* **Partial downloads**: If a download is interrupted, the script will automatically resume from where it left off on the next run.
+* **File already exists**: The script is idempotent - it will skip files that are already fully downloaded.
