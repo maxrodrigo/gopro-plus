@@ -39,13 +39,13 @@ This tool lets you download your entire media library in bulk, making it easy to
 
 ### 1. Get Your Credentials
 
-Go to [GoPro Plus Media Library](https://plus.gopro.com/media-library/), log in, open browser console (`F12`), and paste:
-
-```javascript
-console.log('export AUTH_TOKEN=' + document.cookie.split('; ').find(row => row.startsWith('gp_access_token=')).split('=')[1] + '\nexport USER_ID=' + document.cookie.split('; ').find(row => row.startsWith('gp_user_id=')).split('=')[1]);
-```
-
-Copy the output.
+1. Go to [GoPro Plus Media Library](https://plus.gopro.com/media-library/) and **log in**
+2. Press `F12` to open Developer Tools
+3. Go to **Application** tab (Chrome/Edge) or **Storage** tab (Firefox/Safari)
+4. Click **Cookies** → Select `https://plus.gopro.com`
+5. Copy these values:
+   - `gp_access_token` → This is your `AUTH_TOKEN`
+   - `gp_user_id` → This is your `USER_ID`
 
 ### 2. Run It
 
@@ -136,22 +136,18 @@ docker run --name gopro-downloader \
 
 To set up `AUTH_TOKEN` and `USER_ID`, you need to extract them from your GoPro Plus account.
 
-### Method 1: Browser Console (Easiest) ⚡
+### Method 1: Browser Storage (Easiest) ⚡
 
 1. Go to [GoPro Plus Media Library](https://plus.gopro.com/media-library/) and **log in**
 2. Open your browser's Developer Tools:
-   - **Chrome/Firefox/Edge**: Press `F12` or `Ctrl+Shift+I` (Windows/Linux) / `Cmd+Option+I` (Mac)
-   - **Safari**: Enable Developer Menu in Preferences, then press `Cmd+Option+I`
-3. Click on the **Console** tab
-4. Paste this command and press Enter:
+   - **Chrome/Edge**: Press `F12` → Go to **Application** tab → **Cookies** → `https://plus.gopro.com`
+   - **Firefox**: Press `F12` → Go to **Storage** tab → **Cookies** → `https://plus.gopro.com`
+   - **Safari**: `Cmd+Option+I` → Go to **Storage** tab → **Cookies** → `plus.gopro.com`
+3. Find and copy these cookie values:
+   - `gp_access_token` → Copy the **Value** (starts with `eyJhbGc...`)
+   - `gp_user_id` → Copy the **Value**
 
-```javascript
-console.log('AUTH_TOKEN=' + document.cookie.split('; ').find(row => row.startsWith('gp_access_token=')).split('=')[1] + '\nUSER_ID=' + document.cookie.split('; ').find(row => row.startsWith('gp_user_id=')).split('=')[1]);
-```
-
-5. Copy the output - it will show both values ready to use! 🎉
-
-### Method 2: Manual Extraction
+### Method 2: Network Tab
 
 1. Go to [GoPro Plus Media Library](https://plus.gopro.com/media-library/) and **log in**
 2. Open Developer Tools (`F12` or `Ctrl+Shift+I` / `Cmd+Option+I`)
