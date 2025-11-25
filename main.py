@@ -7,9 +7,15 @@ import readchar
 import requests
 import time
 from requests.exceptions import ChunkedEncodingError, ConnectionError, Timeout
+from rich.console import Console
+from rich.progress import Progress, DownloadColumn, TransferSpeedColumn, TimeRemainingColumn, BarColumn, TextColumn
+from rich.table import Table
+from rich import print as rprint
 
 
 sys.stdout = open(1, "w", encoding="utf-8", closefd=False)
+
+console = Console()
 
 def handler(signum, frame):
     print("\ninterrupting the process. do you really want to exit? (y/n) ")
@@ -71,6 +77,10 @@ class GoProPlus:
 
     def get_filenames_from_media(self, media):
         return [x["filename"] for x in media]
+    
+    def get_media_info(self, media):
+        """Extract filename and file size from media items"""
+        return [(x["filename"], x.get("file_size") or 0) for x in media]
 
     def get_media(self, start_page=1, pages=sys.maxsize, per_page=30):
         url= "{}/media/search".format(self.host)
@@ -83,7 +93,7 @@ class GoProPlus:
                 # for all fields check some requests on GoProPlus website requests
                 "per_page": per_page,
                 "page": current_page,
-                "fields": "id,created_at,content_title,filename,file_extension",
+                "fields": "id,created_at,content_title,filename,file_extension,file_size",
             }
 
             resp = requests.get(
@@ -99,7 +109,6 @@ class GoProPlus:
 
             content = resp.json()
             output_media[current_page] = content["_embedded"]["media"]
-            print("page parsed ({}/{})".format(current_page, total_pages))
 
             if total_pages == 0:
                 total_pages = content["_pages"]["total_pages"]
@@ -136,10 +145,10 @@ class GoProPlus:
                     actual_size = os.path.getsize(filepath)
                     
                     if actual_size == expected_size:
-                        print(f"file already exists and is complete: {filepath} ({actual_size} bytes)")
+                        console.print(f"✓ [green]File already exists and is complete:[/green] {filepath} ({actual_size} bytes)")
                         return True
                     else:
-                        print(f"file exists but incomplete: {actual_size}/{expected_size} bytes, re-downloading...")
+                        console.print(f"[yellow]File incomplete:[/yellow] {actual_size}/{expected_size} bytes, re-downloading...")
                         os.remove(filepath)
                 else:
                     # HEAD request didn't return Content-Length, validate ZIP can be opened
@@ -172,8 +181,6 @@ class GoProPlus:
                 if os.path.exists(temp_filepath):
                     os.remove(temp_filepath)
                 
-                print('downloading to {}'.format(filepath))
-                
                 resp = requests.get(
                     url,
                     params=params,
@@ -183,51 +190,52 @@ class GoProPlus:
                     timeout=30)
 
                 if resp.status_code != 200:
-                    print("request failed with status code: {} and error: {}".format(resp.status_code, self.parse_error(resp)))
+                    console.print(f"[red]✗ Request failed:[/red] {resp.status_code} - {self.parse_error(resp)}")
                     return False
                 
-                downloaded_size = 0
-                with open(temp_filepath, 'wb') as file:
-                    # Iterate over the response in chunks 8K chunks
-                    for chunk in resp.iter_content(chunk_size=8192):
-                        if chunk:  # filter out keep-alive chunks
-                            # Write the chunk to the file
-                            file.write(chunk)
-
-                            # Update the downloaded size
-                            downloaded_size += len(chunk)
-                            progress = ((downloaded_size / 1024) / 1024)
-
-                            if progress_mode == "inline":
-                                # Print the progress
-                                print(f"\rdownloaded: {progress:.2f}MB ({downloaded_size}) bytes", end='')
-
-                            if progress_mode == "newline":
-                                print(f"downloaded: {progress:.2f}MB ({downloaded_size}) bytes")
+                # Get total file size if available
+                total_size = int(resp.headers.get('content-length', 0))
+                
+                # Use Rich progress bar
+                with Progress(
+                    TextColumn("[bold blue]{task.description}"),
+                    BarColumn(),
+                    DownloadColumn(),
+                    TransferSpeedColumn(),
+                    TimeRemainingColumn(),
+                    console=console
+                ) as progress:
+                    task = progress.add_task(f"Downloading {os.path.basename(filepath)}", total=total_size)
+                    
+                    with open(temp_filepath, 'wb') as file:
+                        for chunk in resp.iter_content(chunk_size=8192):
+                            if chunk:
+                                file.write(chunk)
+                                progress.update(task, advance=len(chunk))
 
                 # Download completed successfully, rename temp file to final name
                 if os.path.exists(filepath):
                     os.remove(filepath)
                 os.rename(temp_filepath, filepath)
-                print("\ndownload completed!")
+                console.print(f"[green]✓ Download completed:[/green] {filepath}")
                 return True
                 
             except (ChunkedEncodingError, ConnectionError, Timeout) as e:
                 retry_count += 1
                 if retry_count > max_retries:
-                    print(f"\ndownload failed after {max_retries} retries: {e}")
+                    console.print(f"[red]✗ Download failed after {max_retries} retries:[/red] {e}")
                     # Clean up temp file on final failure
                     if os.path.exists(temp_filepath):
                         os.remove(temp_filepath)
                     return False
                 
                 wait_time = min(2 ** retry_count, 60)  # exponential backoff, max 60s
-                print(f"\nconnection error: {e}")
-                print(f"retrying in {wait_time}s (attempt {retry_count}/{max_retries})...")
+                console.print(f"[yellow]⚠ Connection error:[/yellow] {e}")
+                console.print(f"[yellow]Retrying in {wait_time}s (attempt {retry_count}/{max_retries})...[/yellow]")
                 time.sleep(wait_time)
             
             except Exception as e:
-                print(f"\nunexpected error during download: {e}")
+                console.print(f"[red]✗ Unexpected error:[/red] {e}")
                 # Clean up temp file on error
                 if os.path.exists(temp_filepath):
                     os.remove(temp_filepath)
@@ -266,19 +274,69 @@ def main():
 
     media_pages = gpp.get_media(start_page=args.start_page, pages=args.pages, per_page=args.per_page)
     if not media_pages:
-        print('failed to get media')
+        console.print('[red]✗ Failed to get media[/red]')
         return -1
 
     # Ensure download directory exists
     if not args.dry_run:
         os.makedirs(args.download_path, exist_ok=True)
 
-    for page, media in media_pages.items():
-        if args.dry_run:
-            filenames = gpp.get_filenames_from_media(media)
-            print("[DRY RUN] page {} - {} items: {}".format(page, len(media), filenames))
-        else:
-            print("page {} - downloading {} items".format(page, len(media)))
+    if args.dry_run:
+        # Create a compact summary table
+        total_items = sum(len(media) for media in media_pages.values())
+        
+        def format_size(bytes_size):
+            """Convert bytes to human readable format"""
+            for unit in ['B', 'KB', 'MB', 'GB']:
+                if bytes_size < 1024.0:
+                    return f"{bytes_size:.1f} {unit}"
+                bytes_size /= 1024.0
+            return f"{bytes_size:.1f} TB"
+        
+        table = Table(title=f"[bold cyan]Dry Run - {total_items} items across {len(media_pages)} pages[/bold cyan]", show_header=True, header_style="bold magenta")
+        table.add_column("Page", style="blue", justify="center", width=6)
+        table.add_column("ZIP File", style="yellow", width=15)
+        table.add_column("Items", style="green", justify="right", width=6)
+        table.add_column("Total Size", style="green", justify="right", width=12)
+        table.add_column("Files", style="cyan", no_wrap=False)
+        
+        grand_total_size = 0
+        
+        for page, media in media_pages.items():
+            media_info = gpp.get_media_info(media)
+            zip_filename = f"{page}_page.zip"
+            
+            # Calculate total size for this page
+            total_size = sum(size for _, size in media_info)
+            grand_total_size += total_size
+            
+            # Create compact file list without individual sizes
+            filenames = [name for name, _ in media_info]
+            files_display = ", ".join(filenames)
+            
+            table.add_row(
+                str(page),
+                zip_filename,
+                str(len(media)),
+                format_size(total_size),
+                files_display
+            )
+        
+        # Add total row
+        table.add_section()
+        table.add_row(
+            "[bold]TOTAL[/bold]",
+            "",
+            f"[bold]{total_items}[/bold]",
+            f"[bold]{format_size(grand_total_size)}[/bold]",
+            "",
+            style="bold yellow"
+        )
+        
+        console.print(table)
+    else:
+        for page, media in media_pages.items():
+            console.print(f"[bold blue]Page {page}[/bold blue] - Downloading {len(media)} items")
             filepath = "{}/{}_page.zip".format(args.download_path, page)
             ids = gpp.get_ids_from_media(media)
             gpp.download_media_ids(ids, filepath, progress_mode=args.progress_mode, max_retries=args.max_retries)
