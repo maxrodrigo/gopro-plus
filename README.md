@@ -1,19 +1,31 @@
-# GoPro Plus Downloader
+<div align="center">
 
-If you’re a GoPro Plus user, you’ve probably felt the frustration of trying to download
-your media in bulk, **only to be stopped by the 25-file limit**. This arbitrary restriction
-makes it tedious 😤😡 to migrate your content to other platforms like
-Google Drive, Dropbox, or your self-hosted NAS (e.g. Synology).
+# 🎥 GoPro Plus Downloader 2
 
-GoPro Plus is an open-source project designed to enable users to interact with
-the GoPro Plus media library from the command line. This project aims to provide
-a convenient way to access and manage your GoPro media without the need
-to use the web interface.
+**Break free from the 25-file download limit**
 
-* 🐳 Docker hub: https://hub.docker.com/r/itsankoff/gopro
-* 📝 Article: https://thetooth.io/blog/gopro-plus-downloader/
+A powerful CLI tool to bulk download your entire GoPro Plus media library without restrictions.
 
-## Features
+[![Docker Hub](https://img.shields.io/docker/pulls/maxrodrigo/gopro?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com/r/maxrodrigo/gopro)
+[![Python](https://img.shields.io/badge/python-3.10+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org)
+[![License](https://img.shields.io/github/license/maxrodrigo/gopro-plus?style=flat-square)](LICENSE)
+
+[Features](#-features) • [Quick Start](#-quick-start-docker) • [Installation](#-local-installation) • [Troubleshooting](#-troubleshooting)
+
+</div>
+
+---
+
+## 💡 Why This Tool?
+
+This tool lets you download your entire media library in bulk, making it easy to:
+
+- 📤 Migrate to Google Drive, Dropbox, or any cloud storage
+- 💾 Backup to your self-hosted NAS (Synology, TrueNAS, etc.)
+- 🎬 Access your full media collection offline
+- � Automate regular backups with Docker
+
+## ✨ Features
 
 * 📦 **Bulk Download** - Download all your GoPro Plus media without the 25-file limit
 * 🔄 **Idempotent Downloads** - Safely re-run downloads; already downloaded files are automatically skipped
@@ -21,56 +33,66 @@ to use the web interface.
 * 🐳 **Docker Support** - Run in a containerized environment for easy deployment
 * 🖥️ **CLI Interface** - Full command-line control with flexible options
 
+---
 
-## Usage (Docker environment)
+## 🚀 Quick Start (Docker)
 
-For `<AUTH_TOKEN>` and `<USER_ID>` check [Environment Variables](#environment-variables)
+**Prerequisites:** Get your `AUTH_TOKEN` and `USER_ID` from [Environment Variables](#-environment-variables) section below.
 
-`docker run --name gopro-downloader -e AUTH_TOKEN='<AUTH_TOKEN>' -e USER_ID='<USER_ID>' -v </path/to/download>:/app/download itsankoff/gopro:latest`
-
-or
-
-```
-docker run \
---name gopro-downloader
--e AUTH_TOKEN='<AUTH_TOKEN>' \
--e USER_ID='<USER_ID>' \
--v </path/to/download>:/app/download \
-itsankoff/gopro:latest
+```bash
+docker run --name gopro-downloader \
+  -e AUTH_TOKEN='<YOUR_TOKEN>' \
+  -e USER_ID='<YOUR_USER_ID>' \
+  -v /path/to/download:/app/download \
+  maxrodrigo/gopro:latest
 ```
 
-Supported Docker ENV variable options:
+### Docker Environment Variables
 
-* `-e AUTH_TOKEN=<gopro-auth-token>` - (**required**) authentication token
-        obtained from GoPro Media Library website. See [Environment Variables](#environment-variables).
-* `-e USER_ID=<gopro-user-id>` - (**required**) user id
-        obtained from GoPro Media Library website. See [Environment Variables](#environment-variables).
-* `-e ACTION=<list|download>` - (*optional*) action to execute. The default is `download`.
-* `-e START_PAGE=<number>` - (*optional*) run the `<action>` from specific page
-        (GoPro Media Library API is paginated). The default `1`.
-* `-e PAGES=<number>` - (*optional*) run the `<action>` over the specified number of pages.
-        Default `1000000` which should mean max and will download the all cloud assets.
-* `-e PER_PAGE=<number>` - (*optional*) specify number of items per page. Default `15`.
-* `-e PROGRESS_MODE=<inline|newline|noline>` - (*optional*) specify printing mode
-        for download progress. Default `noline`.
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `AUTH_TOKEN` | ✅ Yes | - | Authentication token from GoPro Media Library |
+| `USER_ID` | ✅ Yes | - | User ID from GoPro Media Library |
+| `ACTION` | ❌ No | `download` | Action to execute: `list` or `download` |
+| `START_PAGE` | ❌ No | `1` | Starting page number |
+| `PAGES` | ❌ No | `1000000` | Number of pages to process |
+| `PER_PAGE` | ❌ No | `15` | Items per page |
+| `PROGRESS_MODE` | ❌ No | `noline` | Progress display: `inline`, `newline`, or `noline` |
 
-## Environment Variables
+## 🔑 Environment Variables
 
-To set up `AUTH_TOKEN` as an environment variable, you'll need to retrieve
-your JWT token by logging into your GoPro Plus media library account.
+To set up `AUTH_TOKEN` and `USER_ID`, you need to extract them from your GoPro Plus account.
 
-1. Open a browser of choice (Firefox/Chrome is prefered, for Safari you need to enable Developer Tools)
-2. Go to [GoPro Plus Media Library](https://plus.gopro.com/media-library/) (assuming that you are signed out. If you are not, please sign out)
-3. Open your browser's Developer Tools (Ctrl+Shift+I on most browsers or Cmd+Option+I on Mac).
-4. Go to the Network Tab on the Developer Tools console.
-5. In the Filter field enter - `user`
-6. Open the request and find the Cookies tab in the Sub Preview. You need to find the two mandatory cookies:
-    * `gp_access_token` - usually starts with `eyJhbGc...`. Copy this long sequence of gibberish characters into the env variable `AUTH_TOKEN`
-    * `gp_user_id` - the user ID. Copy this ID into the env variable `USER_ID`
+### Method 1: Browser Console (Easiest) ⚡
+
+1. Go to [GoPro Plus Media Library](https://plus.gopro.com/media-library/) and **log in**
+2. Open your browser's Developer Tools:
+   - **Chrome/Firefox/Edge**: Press `F12` or `Ctrl+Shift+I` (Windows/Linux) / `Cmd+Option+I` (Mac)
+   - **Safari**: Enable Developer Menu in Preferences, then press `Cmd+Option+I`
+3. Click on the **Console** tab
+4. Paste this command and press Enter:
+
+```javascript
+console.log('AUTH_TOKEN=' + document.cookie.split('; ').find(row => row.startsWith('gp_access_token=')).split('=')[1] + '\nUSER_ID=' + document.cookie.split('; ').find(row => row.startsWith('gp_user_id=')).split('=')[1]);
+```
+
+5. Copy the output - it will show both values ready to use! 🎉
+
+### Method 2: Manual Extraction
+
+1. Go to [GoPro Plus Media Library](https://plus.gopro.com/media-library/) and **log in**
+2. Open Developer Tools (`F12` or `Ctrl+Shift+I` / `Cmd+Option+I`)
+3. Go to the **Network** tab
+4. In the filter field, type: `user`
+5. Refresh the page if needed
+6. Click on any request and find the **Cookies** tab
+7. Look for these cookies:
+   - `gp_access_token` - starts with `eyJhbGc...` → Copy to `AUTH_TOKEN`
+   - `gp_user_id` - the user ID → Copy to `USER_ID`
 
 For Docker:
 ```bash
-docker run -e AUTH_TOKEN=<gopro-auth-token> -e USER_ID=<gopro-user-id> itsankoff/gopro:latest
+docker run -e AUTH_TOKEN=<gopro-auth-token> -e USER_ID=<gopro-user-id> maxrodrigo/gopro:latest
 ```
 
 For Linux/macOS:
@@ -91,78 +113,11 @@ $env:AUTH_TOKEN="<gibberish_string_here>"
 $env:USER_ID="<user-id>"
 ```
 
-Once the `AUTH_TOKEN` and `USER_ID` is set, you can run the GoPro Plus application without needing to pass the token explicitly.
-Remember to replace `<gibberish_string_here>` with the actual token you copied from the console.
-By following these steps, you should be able to effectively manage your GoPro Plus media directly from your command line using GoPro Plus.
+Once the `AUTH_TOKEN` and `USER_ID` are set, you can run the application without passing them explicitly each time.
 
+---
 
-## Local Development Prerequisites
-
-Before you can use GoPro Plus, you need to have the following installed:
-
-* `python3.10+`
-* `pip3`
-* `direnv` (*optional*)
-* `docker` (*optional*)
-
-
-## Local Installation
-
-To run GoPro Plus locally on your machine, follow these steps:
-
-* `git clone https://github.com/itsankoff/gopro-plus.git`
-* `cd gopro-plus`
-* `python3 -m venv .venv`
-* `pip3 install -r requirements.txt`
-* (*optional*) `echo source .venv/bin/activate > .envrc # assuming direnv usage`
-* (*optional*) `echo "export AUTH_TOKEN='<gopro-auth-token (see below)>'" >> .envrc # assuming direnv usage`
-
-
-## Local Usage
-
-Basic usage:
-```bash
-./gopro
-```
-
-Available command-line options:
-
-* `--action <list|download>` - Action to execute (default: `download`)
-* `--start-page <number>` - Start from a specific page (default: `1`)
-* `--pages <number>` - Number of pages to process (default: all pages)
-* `--per-page <number>` - Items per page (default: `30`)
-* `--download-path <path>` - Directory to store downloaded files (default: `./download`)
-* `--progress-mode <inline|newline|noline>` - Download progress display mode (default: `inline`)
-* `--max-retries <number>` - Maximum retry attempts for failed downloads (default: `5`)
-
-Examples:
-```bash
-# List all media without downloading
-./gopro --action list
-
-# Download to a specific directory
-./gopro --download-path /path/to/storage
-
-# Download pages 5-10 with 50 items per page
-./gopro --start-page 5 --pages 6 --per-page 50
-
-# Download with verbose progress output
-./gopro --progress-mode newline
-```
-
-## Dev Tooling
-
-* `Makefile` - check for convenient shortcuts
-    * `build` - build a docker container
-    * `release` - build and release the docker image for multiple platforms.
-    * `run` - run as local docker container
-    * `stop` - stop docker container
-    * `logs` - show docker logs in a follow mode
-    * `clean` - stop and remove spawned containers
-
-* `Dockerfile` - base configuration for the docker image
-
-## Troubleshooting
+## 🔧 Troubleshooting
 
 ### Docker logs
 ```bash
@@ -210,3 +165,24 @@ docker logs gopro-downloader
 ```
 
 This creates smaller, more manageable ZIP files that are less likely to fail and faster to retry if they do.
+
+---
+
+## 🤝 Contributing
+
+Interested in contributing? Check out [CONTRIBUTING.md](CONTRIBUTING.md) for:
+
+- 💻 Local development setup
+- 🐳 Docker development workflow
+- 📝 Coding guidelines
+- 🔄 Contribution workflow
+
+## 📄 License
+
+This project is open source. Check the [LICENSE](LICENSE) file for details.
+
+<div align="center">
+
+If this tool helped you, consider giving it a ⭐ on GitHub!
+
+</div>
