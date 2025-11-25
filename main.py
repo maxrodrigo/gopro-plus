@@ -237,11 +237,10 @@ class GoProPlus:
 
 
 def main():
-    actions = ["list", "download"]
     progress_modes = ["inline", "newline", "noline"]
 
     parser = argparse.ArgumentParser(prog="gopro")
-    parser.add_argument("--action", help="action to execute. supported actions: {}".format(",".join(actions)), default="download")
+    parser.add_argument("--dry-run", action="store_true", help="preview what would be downloaded without actually downloading")
     parser.add_argument("--pages", nargs="?", help="number of pages to iterate over", type=int, default=sys.maxsize)
     parser.add_argument("--per-page", nargs="?", help="number of items per page", type=int, default=30)
     parser.add_argument("--start-page", nargs="?", help="starting page", type=int, default=1)
@@ -271,14 +270,15 @@ def main():
         return -1
 
     # Ensure download directory exists
-    if args.action == "download":
+    if not args.dry_run:
         os.makedirs(args.download_path, exist_ok=True)
 
     for page, media in media_pages.items():
-        filenames = gpp.get_filenames_from_media(media)
-        print("listing page({}) media({})".format(page, filenames))
-
-        if args.action == "download":
+        if args.dry_run:
+            filenames = gpp.get_filenames_from_media(media)
+            print("[DRY RUN] page {} - {} items: {}".format(page, len(media), filenames))
+        else:
+            print("page {} - downloading {} items".format(page, len(media)))
             filepath = "{}/{}_page.zip".format(args.download_path, page)
             ids = gpp.get_ids_from_media(media)
             gpp.download_media_ids(ids, filepath, progress_mode=args.progress_mode, max_retries=args.max_retries)

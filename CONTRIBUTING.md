@@ -49,7 +49,7 @@ Basic usage:
 
 Available command-line options:
 
-* `--action <list|download>` - Action to execute (default: `download`)
+* `--dry-run` - Preview what would be downloaded without actually downloading
 * `--start-page <number>` - Start from a specific page (default: `1`)
 * `--pages <number>` - Number of pages to process (default: all pages)
 * `--per-page <number>` - Items per page (default: `30`)
@@ -59,8 +59,8 @@ Available command-line options:
 
 Examples:
 ```bash
-# List all media without downloading
-./gopro --action list
+# Preview what would be downloaded (dry run)
+./gopro --dry-run
 
 # Download to a specific directory
 ./gopro --download-path /path/to/storage

@@ -10,7 +10,7 @@ A powerful CLI tool to bulk download your entire GoPro Plus media library withou
 [![Python](https://img.shields.io/badge/python-3.10+-blue?style=flat-square&logo=python&logoColor=white)](https://www.python.org)
 [![License](https://img.shields.io/github/license/maxrodrigo/gopro-plus?style=flat-square)](LICENSE)
 
-[Features](#-features) • [Quick Start](#-quick-start-docker) • [Installation](#-local-installation) • [Troubleshooting](#-troubleshooting)
+[Features](#-features) • [Quick Start](#-quick-start) • [Contributing](#-contributing) • [Troubleshooting](#-troubleshooting)
 
 </div>
 
@@ -35,7 +35,80 @@ This tool lets you download your entire media library in bulk, making it easy to
 
 ---
 
-## 🚀 Quick Start (Docker)
+## ⚡ Quick Start
+
+### 1. Get Your Credentials
+
+Go to [GoPro Plus Media Library](https://plus.gopro.com/media-library/), log in, open browser console (`F12`), and paste:
+
+```javascript
+console.log('export AUTH_TOKEN=' + document.cookie.split('; ').find(row => row.startsWith('gp_access_token=')).split('=')[1] + '\nexport USER_ID=' + document.cookie.split('; ').find(row => row.startsWith('gp_user_id=')).split('=')[1]);
+```
+
+Copy the output.
+
+### 2. Run It
+
+Choose your preferred method:
+
+<details>
+<summary><b>🐳 Option A: Docker</b></summary>
+
+```bash
+# Paste your credentials from step 1
+export AUTH_TOKEN='your_token_here'
+export USER_ID='your_user_id_here'
+
+# Download all media
+docker run --name gopro-downloader \
+  -e AUTH_TOKEN="${AUTH_TOKEN}" \
+  -e USER_ID="${USER_ID}" \
+  -v ~/gopro-downloads:/app/download \
+  maxrodrigo/gopro:latest
+```
+
+Your files will be in `~/gopro-downloads/`
+
+</details>
+
+<details>
+<summary><b>💻 Option B: Direct (Python 3.10+)</b></summary>
+
+```bash
+# Paste your credentials from step 1
+export AUTH_TOKEN='your_token_here'
+export USER_ID='your_user_id_here'
+
+# Clone and setup
+git clone https://github.com/maxrodrigo/gopro-plus.git
+cd gopro-plus
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+# Download all media
+./gopro
+```
+
+Your files will be in `./download/`
+
+</details>
+
+### 3. Preview First (Optional)
+
+Want to see what will be downloaded first?
+
+```bash
+# Docker
+docker run -e AUTH_TOKEN="${AUTH_TOKEN}" -e USER_ID="${USER_ID}" -e DRY_RUN=true maxrodrigo/gopro:latest
+
+# Direct
+./gopro --dry-run
+```
+
+---
+
+## 🐳 Docker Configuration
 
 **Prerequisites:** Get your `AUTH_TOKEN` and `USER_ID` from [Environment Variables](#-environment-variables) section below.
 
@@ -53,7 +126,7 @@ docker run --name gopro-downloader \
 |----------|----------|---------|-------------|
 | `AUTH_TOKEN` | ✅ Yes | - | Authentication token from GoPro Media Library |
 | `USER_ID` | ✅ Yes | - | User ID from GoPro Media Library |
-| `ACTION` | ❌ No | `download` | Action to execute: `list` or `download` |
+| `DRY_RUN` | ❌ No | `false` | Set to `true` to preview without downloading |
 | `START_PAGE` | ❌ No | `1` | Starting page number |
 | `PAGES` | ❌ No | `1000000` | Number of pages to process |
 | `PER_PAGE` | ❌ No | `15` | Items per page |

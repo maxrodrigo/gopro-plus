@@ -11,4 +11,11 @@ if [ ! -d "${DOWNLOAD_PATH}" ]; then
 fi
 
 # Start the main application
-exec python3 main.py --action "${ACTION}" --start-page "${START_PAGE}" --pages "${PAGES}" --per-page "${PER_PAGE}" --download-path "${DOWNLOAD_PATH}" --progress-mode "${PROGRESS_MODE}"
+# Build command with optional dry-run flag
+CMD="python3 main.py --start-page ${START_PAGE} --pages ${PAGES} --per-page ${PER_PAGE} --download-path ${DOWNLOAD_PATH} --progress-mode ${PROGRESS_MODE}"
+
+if [ "${DRY_RUN}" = "true" ]; then
+  CMD="${CMD} --dry-run"
+fi
+
+exec ${CMD}
