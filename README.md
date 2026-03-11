@@ -29,15 +29,18 @@ This tool lets you download your entire media library in bulk, making it easy to
 
 * 📦 **Bulk Download** - Download all your GoPro Plus media without the 25-file limit
 * 🔄 **Idempotent Downloads** - Safely re-run downloads; already downloaded files are automatically skipped
-* 🔁 **Automatic Retry** - Network failures are handled with exponential backoff retry logic (restarts from scratch on failure)
+* �️ **Enhanced Progress Bar** - Real-time download progress with percentage, MB/s speed, and file size display
+* 📸 **EXIF Metadata Preservation** - Restores original capture dates and adds camera model/dimensions to JPEG files
+* 🔄 **Automatic Retry** - Network failures are handled with exponential backoff retry logic
 * 🐳 **Docker Support** - Run in a containerized environment for easy deployment
 * 🖥️ **CLI Interface** - Full command-line control with flexible options
+* 📁 **Organized Downloads** - Files organized by page number with proper timestamps
 
 ---
 
 ## ⚡ Quick Start
 
-### 1. Get Your Credentials
+### 1. Get Your GoPro Credentials
 
 1. Go to [GoPro Plus Media Library](https://plus.gopro.com/media-library/) and **log in**
 2. Press `F12` to open Developer Tools
@@ -47,22 +50,85 @@ This tool lets you download your entire media library in bulk, making it easy to
    - `gp_access_token` → This is your `AUTH_TOKEN`
    - `gp_user_id` → This is your `USER_ID`
 
-### 2. Run It
-
-Choose your preferred method:
-
-<details>
-<summary><b>🐳 Option A: Docker</b></summary>
+### 2. Clone and Setup
 
 ```bash
-# Paste your credentials from step 1
+# Clone the repository
+git clone https://github.com/maxrodrigo/gopro-plus.git
+cd gopro-plus
+
+# Create virtual environment (REQUIRED on macOS to avoid architecture issues)
+python3 -m venv .venv
+
+# Activate the virtual environment
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 3. Configure Credentials
+
+Create a `.envrc` file with your credentials:
+
+```bash
+# Create the file
+cat > .envrc << EOF
 export AUTH_TOKEN='your_token_here'
 export USER_ID='your_user_id_here'
+EOF
+
+# Load the credentials
+source .envrc
+```
+
+### 4. Run the Script
+
+```bash
+# Preview what will be downloaded (recommended first)
+./gopro --dry-run
 
 # Download all media
+./gopro
+
+# Or download specific pages
+./gopro --start-page 1 --pages 5
+```
+
+**Where are my files?** Downloads are saved in `./download/` directory, organized by page number.
+
+---
+
+## 🚀 Advanced Usage
+
+<details>
+<summary><b>📋 Command Options</b></summary>
+
+```bash
+# Basic usage
+./gopro                              # Download all media
+./gopro --dry-run                    # Preview only, no download
+./gopro --start-page 5 --pages 10    # Download pages 5-14
+./gopro --per-page 10                # Smaller batches (default: 30)
+
+# Performance options
+./gopro --max-retries 10             # More retry attempts (default: 5)
+./gopro --per-page 5                 # Smaller ZIP files for unstable connections
+
+# Output options
+./gopro --download-path /path/to/dir # Custom download directory
+```
+
+</details>
+
+<details>
+<summary><b>� Docker Option</b></summary>
+
+```bash
+# Pull and run with Docker
 docker run --name gopro-downloader \
-  -e AUTH_TOKEN="${AUTH_TOKEN}" \
-  -e USER_ID="${USER_ID}" \
+  -e AUTH_TOKEN="your_token_here" \
+  -e USER_ID="your_user_id_here" \
   -v ~/gopro-downloads:/app/download \
   maxrodrigo/gopro:latest
 ```
@@ -71,36 +137,6 @@ Your files will be in `~/gopro-downloads/`
 
 </details>
 
-<details>
-<summary><b>💻 Option B: Direct (Python 3.10+)</b></summary>
-
-```bash
-# Paste your credentials from step 1
-export AUTH_TOKEN='your_token_here'
-export USER_ID='your_user_id_here'
-
-# Clone and setup
-git clone https://github.com/maxrodrigo/gopro-plus.git
-cd gopro-plus
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-
-# Download all media
-./gopro
-```
-
-Your files will be in `./download/`
-
-</details>
-
-### 3. Preview First (Optional)
-
-Want to see what will be downloaded first?
-
-```bash
-# Docker
-docker run -e AUTH_TOKEN="${AUTH_TOKEN}" -e USER_ID="${USER_ID}" -e DRY_RUN=true maxrodrigo/gopro:latest
 
 # Direct
 ./gopro --dry-run
@@ -195,9 +231,56 @@ docker logs gopro-downloader
 
 ### Common Issues
 
-* **Authentication failed**: Your `AUTH_TOKEN` or `USER_ID` may have expired. Re-authenticate and update your environment variables.
-* **Download stuck**: The script validates existing files before downloading. For large ZIP files, this may take a moment.
-* **File already exists**: The script is idempotent - it will skip files that are already fully downloaded.
+#### ❌ Architecture Mismatch Error (macOS)
+**Error:** `ImportError: incompatible architecture (have 'arm64', need 'x86_64')`
+
+**Solution:** Always use the virtual environment:
+```bash
+# Create/activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# The ./gopro script automatically uses the venv Python
+./gopro
+```
+
+#### ❌ OpenSSL Warning (macOS)
+**Warning:** `urllib3 v2.0 only supports OpenSSL 1.1.1+`
+
+**Solution:** This is harmless and already suppressed. No action needed.
+
+#### ❌ Starship Timeout
+**Warning:** `Executing command timed out`
+
+**Solution:** Increase Starship timeout in `~/.config/starship.toml`:
+```toml
+[python]
+command_timeout = 0  # No timeout
+```
+
+#### ❌ Authentication Failed
+**Error:** `Authentication failed`
+
+**Solution:** Your tokens expired. Re-authenticate:
+1. Go to [GoPro Plus Media Library](https://plus.gopro.com/media-library/)
+2. Get fresh `AUTH_TOKEN` and `USER_ID` from cookies
+3. Update your `.envrc` file
+
+#### ❌ Download Issues
+**Problem:** Downloads fail or are very slow
+
+**Solution:** Use smaller batches:
+```bash
+# Smaller ZIP files for unstable connections
+./gopro --per-page 10
+
+# More retry attempts
+./gopro --max-retries 10
+
+# Process fewer pages at once
+./gopro --start-page 1 --pages 5
+```
 
 ### Download Failures and Retry Behavior
 

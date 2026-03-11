@@ -1,3 +1,8 @@
 #!/bin/bash
 
-python3 main.py ${@}
+# Use virtual environment Python if available, otherwise use system python3
+if [ -f ".venv/bin/python3" ]; then
+    .venv/bin/python3 main.py ${@}
+else
+    python3 main.py ${@}
+fi
