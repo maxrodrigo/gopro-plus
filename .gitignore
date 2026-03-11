@@ -179,3 +179,10 @@ cython_debug/
 #.idea/
 
 download/
+
+# Generated files
+download_progress.json
+download_commands.txt
+all_media.txt
+*_media_ids.txt
+media_ids.txt

@@ -32,7 +32,9 @@ This tool lets you download your entire media library in bulk, making it easy to
 * �️ **Enhanced Progress Bar** - Real-time download progress with percentage, MB/s speed, and file size display
 * 📸 **EXIF Metadata Preservation** - Restores original capture dates and adds camera model/dimensions to JPEG files
 * 🔄 **Automatic Retry** - Network failures are handled with exponential backoff retry logic
-* 🐳 **Docker Support** - Run in a containerized environment for easy deployment
+* �️ **Bulk Deletion** - Delete media from GoPro cloud with safety confirmations and dry-run mode
+* 📋 **ID Export** - Export media IDs for backup, deletion, or external processing
+* �🐳 **Docker Support** - Run in a containerized environment for easy deployment
 * 🖥️ **CLI Interface** - Full command-line control with flexible options
 * 📁 **Organized Downloads** - Files organized by page number with proper timestamps
 
@@ -117,7 +119,88 @@ source .envrc
 
 # Output options
 ./gopro --download-path /path/to/dir # Custom download directory
+
+# Export media IDs
+./gopro --export-ids media_ids.txt   # Export all media IDs to file
+./gopro --export-ids -               # Export to stdout (for piping)
 ```
+
+</details>
+
+<details>
+<summary><b>🗑️ Delete Media from GoPro Cloud</b></summary>
+
+**⚠️ WARNING: Deletion is permanent and cannot be undone!**
+
+The `delete_media.py` script allows you to bulk delete media from your GoPro Plus cloud storage.
+
+### Step 1: Export Media IDs
+
+First, get the IDs of media you want to delete:
+
+```bash
+# Export all media IDs
+./gopro --pages 999 --per-page 100 --export-ids all_media_ids.txt
+
+# Export specific page range
+./gopro --start-page 1 --pages 5 --per-page 100 --export-ids first_500_ids.txt
+
+# Export to stdout
+./gopro --pages 999 --per-page 100 --export-ids -
+```
+
+### Step 2: Delete Media
+
+```bash
+# Delete from a file (one ID per line)
+python3 delete_media.py --file media_ids.txt
+
+# Delete specific IDs directly
+python3 delete_media.py --ids WlVap4wRO55kZ,oKawQQ5qRJ7BP,LRW7Mkd6RKnbX
+
+# Dry run to preview (recommended first!)
+python3 delete_media.py --file media_ids.txt --dry-run
+```
+
+### Features
+
+- **Batch deletion**: Automatically handles API limit of 100 IDs per request
+- **Safety confirmation**: Prompts before deleting
+- **Dry-run mode**: Preview what will be deleted without actually deleting
+- **Progress tracking**: Real-time progress with Rich UI
+- **Multiple input methods**: File or command-line IDs
+
+### Example Workflow
+
+```bash
+# 1. Export all media IDs
+./gopro --pages 999 --per-page 100 --export-ids all_media.txt
+
+# 2. Review the file
+wc -l all_media.txt  # Check how many items
+
+# 3. Preview deletion (dry run)
+python3 delete_media.py --file all_media.txt --dry-run
+
+# 4. Delete (will ask for confirmation)
+python3 delete_media.py --file all_media.txt
+```
+
+### Selective Deletion
+
+```bash
+# Delete only first 100 items
+head -100 all_media.txt > first_100.txt
+python3 delete_media.py --file first_100.txt
+
+# Delete specific date range (after exporting and filtering)
+grep "2024" all_media.txt > 2024_media.txt
+python3 delete_media.py --file 2024_media.txt
+```
+
+**Note:** The script uses your existing `AUTH_TOKEN` and `USER_ID` from `.envrc`.
+
+**📖 For complete deletion documentation, see [DELETE_MEDIA.md](DELETE_MEDIA.md)**
 
 </details>
 

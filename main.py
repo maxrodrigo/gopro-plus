@@ -425,6 +425,7 @@ def main():
     parser.add_argument("--download-path", help="path to store the download zip", default="./download")
     parser.add_argument("--progress-mode", help="showing download progress. supported modes: {}".format(",".join(progress_modes)), default=progress_modes[0])
     parser.add_argument("--max-retries", nargs="?", help="maximum number of retries for failed downloads", type=int, default=5)
+    parser.add_argument("--export-ids", help="export media IDs to file (one per line) or stdout if '-'", type=str)
 
     args = parser.parse_args()
 
@@ -446,6 +447,24 @@ def main():
     if not media_pages:
         console.print('[red]✗ Failed to get media[/red]')
         return -1
+
+    # Export IDs if requested
+    if args.export_ids:
+        all_ids = []
+        for page, media in media_pages.items():
+            all_ids.extend(gpp.get_ids_from_media(media))
+        
+        if args.export_ids == '-':
+            # Output to stdout
+            for media_id in all_ids:
+                print(media_id)
+        else:
+            # Write to file
+            with open(args.export_ids, 'w') as f:
+                for media_id in all_ids:
+                    f.write(f"{media_id}\n")
+            console.print(f"[green]✓ Exported {len(all_ids)} media IDs to:[/green] {args.export_ids}")
+        return 0
 
     # Ensure download directory exists
     if not args.dry_run:
