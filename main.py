@@ -1,21 +1,44 @@
 import os
 import sys
+import warnings
+
+# Suppress urllib3 OpenSSL warning on macOS (must be before importing requests)
+warnings.filterwarnings('ignore', message='urllib3 v2.0 only supports OpenSSL 1.1.1+')
+
 import json
 import argparse
 import signal
+import zipfile
+import datetime
 import readchar
 import requests
 import time
 from requests.exceptions import ChunkedEncodingError, ConnectionError, Timeout
 from rich.console import Console
-from rich.progress import Progress, DownloadColumn, TransferSpeedColumn, TimeRemainingColumn, BarColumn, TextColumn
+from rich.progress import Progress, DownloadColumn, TransferSpeedColumn, TimeRemainingColumn, BarColumn, TextColumn, TaskProgressColumn, SpinnerColumn, ProgressColumn
 from rich.table import Table
 from rich import print as rprint
+from rich.text import Text
+from dotenv import load_dotenv
 
+# Explicitly path to the .envrc file
+envrc_path = '.envrc'
+load_dotenv(dotenv_path=envrc_path)
 
 sys.stdout = open(1, "w", encoding="utf-8", closefd=False)
 
 console = Console()
+
+class MBSpeedColumn(ProgressColumn):
+    """Renders human readable transfer speed in MB/s."""
+    
+    def render(self, task):
+        """Show speed in MB/s."""
+        speed = task.finished_speed or task.speed
+        if speed is None:
+            return Text("?", style="progress.data.speed")
+        # Speed is in units per second (we're using MB as units)
+        return Text(f"{speed:.1f} MB/s", style="yellow")
 
 def handler(signum, frame):
     print("\ninterrupting the process. do you really want to exit? (y/n) ")
@@ -93,7 +116,7 @@ class GoProPlus:
                 # for all fields check some requests on GoProPlus website requests
                 "per_page": per_page,
                 "page": current_page,
-                "fields": "id,created_at,content_title,filename,file_extension,file_size",
+                "fields": "id,created_at,captured_at,content_title,filename,file_extension,file_size,ready_to_view,type,camera_positions,width,height,moments_count,on_public_profile,source_duration,token,orientation,gopro_media,camera_model,fps",
             }
 
             resp = requests.get(
@@ -121,7 +144,149 @@ class GoProPlus:
         return output_media
 
 
-    def download_media_ids(self, ids, filepath, progress_mode="inline", max_retries=5):
+    def unzip_and_apply_timestamps(self, zip_path, extract_dir, media):
+        """Unzip a page archive and restore original capture timestamps from cloud metadata."""
+        # Build filename -> timestamp and metadata map
+        ts_map = {}
+        metadata_map = {}
+        
+        for item in media:
+            fname = item.get("filename", "")
+            item_id = item.get("id", "")
+            item_type = item.get("type", "")
+            ts_str = item.get("captured_at") or item.get("created_at", "")
+            
+            # Extract additional metadata for EXIF
+            meta = {
+                "camera_positions": item.get("camera_positions"),
+                "camera_model": item.get("camera_model"),
+                "width": item.get("width"),
+                "height": item.get("height"),
+                "fps": item.get("fps"),
+                "orientation": item.get("orientation"),
+                "gopro_media": item.get("gopro_media"),
+            }
+            
+            if not ts_str:
+                continue
+            
+            # MultiClipEdit items: ZIP uses {id}.mp4 regardless of filename field
+            if item_type == "MultiClipEdit" and item_id:
+                for ext in [".mp4", ".MP4"]:
+                    key = f"{item_id}{ext}"
+                    ts_map[key] = ts_str
+                    metadata_map[key] = meta
+            # Regular files: use filename directly
+            elif fname:
+                ts_map[fname] = ts_str
+                metadata_map[fname] = meta
+
+        os.makedirs(extract_dir, exist_ok=True)
+
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                members = zf.namelist()
+        except zipfile.BadZipFile as e:
+            console.print(f"[red]✗ Cannot open zip {zip_path}: {e}[/red]")
+            return
+
+        total = len(members)
+
+        # --- Unzip with progress ---
+        with Progress(
+            TextColumn("[bold cyan]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task(f"Unzipping  {os.path.basename(zip_path)}", total=total)
+            with zipfile.ZipFile(zip_path, 'r') as zf:
+                for member in members:
+                    zf.extract(member, extract_dir)
+                    progress.advance(task)
+
+        console.print(f"[green]✓ Unzipped {total} files →[/green] {extract_dir}")
+
+        # --- Apply timestamps with progress ---
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[bold cyan]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Updating timestamps", total=total)
+            updated = 0
+            skipped = 0
+            exif_errors = 0
+
+            for member in members:
+                basename = os.path.basename(member)
+                filepath = os.path.join(extract_dir, member)
+                progress.update(task, description=f"Updating  {basename}")
+
+                if basename in ts_map:
+                    ts_str = ts_map[basename]
+                    try:
+                        dt = datetime.datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                        ts = dt.timestamp()
+
+                        # For JPEG files patch EXIF DateTimeOriginal first
+                        if basename.lower().endswith((".jpg", ".jpeg")):
+                            try:
+                                import piexif
+                                exif_dt = dt.strftime("%Y:%m:%d %H:%M:%S")
+                                try:
+                                    exif_dict = piexif.load(filepath)
+                                except Exception:
+                                    exif_dict = {"0th": {}, "Exif": {}, "GPS": {}, "1st": {}}
+                                
+                                # Set datetime tags
+                                exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal] = exif_dt.encode()
+                                exif_dict["Exif"][piexif.ExifIFD.DateTimeDigitized] = exif_dt.encode()
+                                exif_dict["0th"][piexif.ImageIFD.DateTime] = exif_dt.encode()
+                                
+                                # Add camera model if available
+                                if basename in metadata_map:
+                                    meta = metadata_map[basename]
+                                    if meta.get("camera_model"):
+                                        exif_dict["0th"][piexif.ImageIFD.Make] = meta["camera_model"].encode()
+                                        exif_dict["0th"][piexif.ImageIFD.Model] = meta["camera_model"].encode()
+                                    
+                                    # Add image dimensions if available
+                                    if meta.get("width"):
+                                        exif_dict["Exif"][piexif.ExifIFD.PixelXDimension] = meta["width"]
+                                    if meta.get("height"):
+                                        exif_dict["Exif"][piexif.ExifIFD.PixelYDimension] = meta["height"]
+                                    
+                                    # Add orientation if available
+                                    if meta.get("orientation"):
+                                        exif_dict["0th"][piexif.ImageIFD.Orientation] = meta["orientation"]
+                                
+                                exif_bytes = piexif.dump(exif_dict)
+                                piexif.insert(exif_bytes, filepath)
+                            except Exception as e:
+                                exif_errors += 1
+
+                        # Set file system mtime + atime AFTER EXIF update (piexif.insert rewrites the file)
+                        os.utime(filepath, (ts, ts))
+
+                        updated += 1
+                    except Exception as e:
+                        skipped += 1
+                else:
+                    skipped += 1
+
+                progress.advance(task)
+
+        parts = [f"[green]✓ Timestamps applied: {updated}/{total}[/green]"]
+        if skipped:
+            parts.append(f"[yellow]skipped: {skipped}[/yellow]")
+        if exif_errors:
+            parts.append(f"[yellow]EXIF errors: {exif_errors}[/yellow]")
+        console.print("  ".join(parts))
+
+    def download_media_ids(self, ids, filepath, progress_mode="inline", max_retries=5, estimated_size=0):
         url = "{}/media/x/zip/source".format(self.host)
         params = {
             "ids": ",".join(ids),
@@ -193,25 +358,30 @@ class GoProPlus:
                     console.print(f"[red]✗ Request failed:[/red] {resp.status_code} - {self.parse_error(resp)}")
                     return False
                 
-                # Get total file size if available
-                total_size = int(resp.headers.get('content-length', 0))
+                # Use estimated size from media metadata (ZIP is compressed so actual will be smaller)
+                # Server doesn't provide Content-Length for dynamically generated ZIPs
+                total_size = estimated_size if estimated_size > 0 else int(resp.headers.get('content-length', 0))
                 
-                # Use Rich progress bar
+                # Use Rich progress bar with thicker, more visible bar
                 with Progress(
                     TextColumn("[bold blue]{task.description}"),
-                    BarColumn(),
-                    DownloadColumn(),
-                    TransferSpeedColumn(),
+                    BarColumn(bar_width=None, style="bar.back", complete_style="green", finished_style="bold green"),
+                    TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                    TextColumn("[cyan]{task.completed:.1f}/{task.total:.1f} MB"),
+                    MBSpeedColumn(),
                     TimeRemainingColumn(),
                     console=console
                 ) as progress:
-                    task = progress.add_task(f"Downloading {os.path.basename(filepath)}", total=total_size)
+                    # Convert to MB for display (estimated size is uncompressed, actual download will be less)
+                    total_mb = total_size / (1024 * 1024) if total_size > 0 else 0
+                    task = progress.add_task(f"Downloading {os.path.basename(filepath)}", total=total_mb)
                     
                     with open(temp_filepath, 'wb') as file:
                         for chunk in resp.iter_content(chunk_size=8192):
                             if chunk:
                                 file.write(chunk)
-                                progress.update(task, advance=len(chunk))
+                                # Convert bytes to MB for progress display
+                                progress.update(task, advance=len(chunk) / (1024 * 1024))
 
                 # Download completed successfully, rename temp file to final name
                 if os.path.exists(filepath):
@@ -255,6 +425,7 @@ def main():
     parser.add_argument("--download-path", help="path to store the download zip", default="./download")
     parser.add_argument("--progress-mode", help="showing download progress. supported modes: {}".format(",".join(progress_modes)), default=progress_modes[0])
     parser.add_argument("--max-retries", nargs="?", help="maximum number of retries for failed downloads", type=int, default=5)
+    parser.add_argument("--export-ids", help="export media IDs to file (one per line) or stdout if '-'", type=str)
 
     args = parser.parse_args()
 
@@ -276,6 +447,24 @@ def main():
     if not media_pages:
         console.print('[red]✗ Failed to get media[/red]')
         return -1
+
+    # Export IDs if requested
+    if args.export_ids:
+        all_ids = []
+        for page, media in media_pages.items():
+            all_ids.extend(gpp.get_ids_from_media(media))
+        
+        if args.export_ids == '-':
+            # Output to stdout
+            for media_id in all_ids:
+                print(media_id)
+        else:
+            # Write to file
+            with open(args.export_ids, 'w') as f:
+                for media_id in all_ids:
+                    f.write(f"{media_id}\n")
+            console.print(f"[green]✓ Exported {len(all_ids)} media IDs to:[/green] {args.export_ids}")
+        return 0
 
     # Ensure download directory exists
     if not args.dry_run:
@@ -337,9 +526,16 @@ def main():
     else:
         for page, media in media_pages.items():
             console.print(f"[bold blue]Page {page}[/bold blue] - Downloading {len(media)} items")
-            filepath = "{}/{}_page.zip".format(args.download_path, page)
+            zip_filepath = "{}/{}_page.zip".format(args.download_path, page)
+            extract_dir = "{}/{}_page".format(args.download_path, page)
             ids = gpp.get_ids_from_media(media)
-            gpp.download_media_ids(ids, filepath, progress_mode=args.progress_mode, max_retries=args.max_retries)
+            
+            # Calculate estimated download size from individual file sizes
+            estimated_size = sum(item.get("file_size") or 0 for item in media)
+            
+            success = gpp.download_media_ids(ids, zip_filepath, progress_mode=args.progress_mode, max_retries=args.max_retries, estimated_size=estimated_size)
+            if success:
+                gpp.unzip_and_apply_timestamps(zip_filepath, extract_dir, media)
 
 
 if __name__ == "__main__":
